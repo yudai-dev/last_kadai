@@ -70,11 +70,23 @@ class Tetris:
             self.lock()
         return False
 
-    def rotate(self):
+    def right_rotate(self):
         if self.game_over or self.paused or self.kind == 'O':
             return False
         # 座標を90度回転。壁際では1～2マス横へ補正する簡易ウォールキック
         rotated = [(3 - dy, dx) for dx, dy in self.cells]
+        for shift in (0, -1, 1, -2, 2):
+            if self.can_place(rotated, self.x + shift, self.y):
+                self.cells = rotated
+                self.x += shift
+                return True
+        return False
+
+    def left_rotate(self):
+        if self.game_over or self.paused or self.kind == 'O':
+            return False
+        # 座標を90度回転。壁際では1～2マス横へ補正する簡易ウォールキック
+        rotated = [(dy,3 - dx) for dx, dy in self.cells]
         for shift in (0, -1, 1, -2, 2):
             if self.can_place(rotated, self.x + shift, self.y):
                 self.cells = rotated
@@ -122,7 +134,7 @@ class Tetris:
                     screen[py][px] = self.kind
         out = ['=== ASCII TETRIS ===', f'SCORE {self.score}    LINES {self.lines}    NEXT {self.next_kind}', '+' + '--' * COLS + '+']
         out += ['|' + ''.join('[]' if c != ' ' else '  ' for c in row) + '|' for row in screen]
-        out += ['+' + '--' * COLS + '+', 'A/D:移動 W:回転 S:加速 Space:落下 P:停止 R:再開 Q:終了']
+        out += ['+' + '--' * COLS + '+', 'A/D:移動 W:右回転 E:左回転 S:加速 Space:落下 P:停止 R:再開 Q:終了']
         if self.paused:
             out.append('--- PAUSED ---')
         if self.game_over:
@@ -151,9 +163,11 @@ def main():
                 elif key in ('d', 'right'):
                     game.move(1, 0)
                 elif key in ('w', 'up'):
-                    game.rotate()
+                    game.right_rotate()
                 elif key in ('s', 'down'):
                     game.move(0, 1)
+                elif key == 'e':
+                    game.left_rotate()
                 elif key == ' ':
                     game.hard_drop()
             now = time.monotonic()
