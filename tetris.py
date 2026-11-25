@@ -13,6 +13,7 @@ Space 一気に落下、P 一時停止、R 最初から、Q 終了。
 from __future__ import annotations
 import random
 import time
+from collections import deque
 from itertools import zip_longest
 from terminal_io import Terminal, paint
 
@@ -272,38 +273,76 @@ def evaluate(board):
 
 def find_best_move(cpu):
     best_score = float('-inf')
-    best_move = None
-    cells = list(cpu.cells)
+    best_actions = []
 
-    for rotation in range(4):
+    queue = deque([
+        (tuple(cpu.cells), cpu.x, cpu.y, [])
+    ])
 
-        for x in range(-3, COLS):
-            y = cpu.y
+    visited = set()
 
-            if not cpu.can_place(cells, x, y):
-                continue
+    while queue:
+        cells, x, y, actions = queue.popleft()
 
-            while cpu.can_place(cells, x, y + 1):
-                y += 1
+        state = (tuple(sorted(cells)), x, y)
 
-            board = [row[:] for row in cpu.board]
+        if state in visited:
+            continue
 
-            for dx, dy in cells:
-                board[y + dy][x + dx] = cpu.kind
+        visited.add(state)
 
-            score = evaluate(board)
+        # 落下先を調べる
+        drop_y = y
 
-            if score > best_score:
-                best_score = score
-                best_move = (list(cells), x)
+        while cpu.can_place(cells, x, drop_y + 1):
+            drop_y += 1
 
-        if cpu.kind == 'O':
-            break
+        # 仮の盤面を作る
+        board = [row[:] for row in cpu.board]
 
-        cells = [(3 - dy, dx) for dx, dy in cells]
+        for dx, dy in cells:
+            board[drop_y + dy][x + dx] = cpu.kind
 
-    return best_move
+        # 盤面を評価する
+        score = evaluate(board)
 
+        if score > best_score:
+            best_score = score
+            best_actions = actions + ['drop']
+
+        # 左右の移動を探索
+        for dx, action in [(-1, 'left'), (1, 'right')]:
+            if cpu.can_place(cells, x + dx, y):
+                queue.append(
+                    (cells, x + dx, y, actions + [action])
+                )
+
+        # 左右の回転を探索
+        if cpu.kind != 'O':
+            rotations = [
+                (tuple((3 - dy, dx) for dx, dy in cells), 'rotate_right'),
+                (tuple((dy, 3 - dx) for dx, dy in cells), 'rotate_left')
+            ]
+
+            for rotated, action in rotations:
+                for shift in (0, -1, 1, -2, 2):
+                    if cpu.can_place(rotated, x + shift, y):
+                        queue.append(
+                            (rotated, x + shift, y, actions + [action])
+                        )
+                        break
+
+    return best_actions
+
+def cpu_play(cpu):
+    if cpu.game_over or cpu.paused:
+        return
+
+    best_move = find_best_move(cpu)
+
+    if best_move is not None:
+        cpu.cells, cpu.x = best_move
+        cpu.hard_drop()
 
 def main():
     def render_battle(game, cpu):
@@ -362,8 +401,8 @@ def main():
 
             # CPUの自動落下
             if not game.paused and not game.game_over and not cpu.game_over:
-                if now - last_cpu >= cpu.fall_interval:
-                    cpu.move(0, 1)
+                if now - last_cpu >= 1.5:
+                    cpu_play(cpu)
                     last_cpu = now
 
             time.sleep(0.035)
