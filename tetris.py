@@ -149,12 +149,23 @@ class Tetris:
     def render(self):
         screen = [row[:] for row in self.board]
         if not self.game_over:
+            ghost_y = self.y
+
+            while self.can_place(self.cells, self.x, ghost_y + 1):
+                ghost_y += 1
+
+            for dx, dy in self.cells:
+                px, py = self.x + dx, ghost_y + dy
+
+                if 0 <= py < ROWS and 0 <= px < COLS:
+                      screen[py][px] = '.' 
+
             for dx, dy in self.cells:
                 px, py = self.x + dx, self.y + dy
                 if 0 <= py < ROWS and 0 <= px < COLS:
                     screen[py][px] = self.kind
         out = ['=== ASCII TETRIS ===', f'SCORE {self.score}    LINES {self.lines}',    f'HOLD {self.hold_kind or "-"}    NEXT {self.next_kind}', '+' + '--' * COLS + '+']
-        out += ['|' + ''.join('[]' if c != ' ' else '  ' for c in row) + '|' for row in screen]
+        out += ['|' + ''.join('()' if c == '.' else '[]' if c != ' ' else '  ' for c in row) + '|' for row in screen]
         out += ['+' + '--' * COLS + '+', 'A/D:移動 W:右回転 E:左回転 C:ホールド Space:即時落下 P:停止 Q:終了 R:再開']
         if self.paused:
             out.append('--- PAUSED ---')
