@@ -231,6 +231,47 @@ class Tetris:
         return out
 
 
+def evaluate(board):
+    heights = []
+    holes = 0
+
+    for x in range(COLS):
+        height = 0
+        found_block = False
+
+        for y in range(ROWS):
+            if board[y][x] != ' ':
+                if not found_block:
+                    height = ROWS - y
+                    found_block = True
+
+            elif found_block:
+                holes += 1
+
+        heights.append(height)
+
+    total_height = sum(heights)
+
+    bumpiness = sum(
+        abs(heights[x] - heights[x + 1])
+        for x in range(COLS - 1)
+    )
+
+    cleared_lines = sum(
+        1 for row in board if ' ' not in row
+    )
+
+    score = (
+        cleared_lines * 100
+        - holes * 40
+        - total_height * 5
+        - bumpiness * 10
+    )
+
+    return score
+
+
+
 def main():
     def render_battle(game, cpu):
         player_screen = game.render()
