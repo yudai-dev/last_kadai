@@ -13,6 +13,7 @@ Space 一気に落下、P 一時停止、R 最初から、Q 終了。
 from __future__ import annotations
 import random
 import time
+from itertools import zip_longest
 from terminal_io import Terminal, paint
 
 COLS, ROWS = 10, 18
@@ -175,20 +176,38 @@ class Tetris:
 
 
 def main():
+    def render_battle(game, cpu):
+        player_screen = game.render()
+        cpu_screen = cpu.render()
+
+        out = []
+
+        for left, right in zip_longest(
+            player_screen, cpu_screen, fillvalue=""
+        ):
+            out.append(left.ljust(55) + right)
+
+        return out
+
     game = Tetris()
+    cpu = Tetris()
     with Terminal() as terminal:
         last_fall = time.monotonic()
+        last_cpu = time.monotonic()
         while True:
-            paint(game.render())
+            paint(render_battle(game, cpu))
             key = terminal.read_key()
             if key == 'q':
                 break
             if key == 'r':
                 game.reset()
+                cpu.reset()
                 last_fall = time.monotonic()
+                last_cpu = time.monotonic()
             elif key == 'p':
                 game.paused = not game.paused
                 last_fall = time.monotonic()
+                last_cpu = time.monotonic()
             elif not game.paused and not game.game_over:
                 if key in ('a', 'left'):
                     game.move(-1, 0)
@@ -205,9 +224,18 @@ def main():
                 elif key == ' ':
                     game.hard_drop()
             now = time.monotonic()
-            if not game.paused and not game.game_over and now - last_fall >= game.fall_interval:
-                game.move(0, 1)
-                last_fall = now
+            # プレイヤーの自動落下
+            if not game.paused and not game.game_over:
+                if now - last_fall >= game.fall_interval:
+                    game.move(0, 1)
+                    last_fall = now
+
+            # CPUの自動落下
+            if not game.paused and not game.game_over and not cpu.game_over:
+                if now - last_cpu >= cpu.fall_interval:
+                    cpu.move(0, 1)
+                    last_cpu = now
+
             time.sleep(0.035)
     print('テトリスを終了しました。')
 
