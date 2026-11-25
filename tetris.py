@@ -334,15 +334,27 @@ def find_best_move(cpu):
 
     return best_actions
 
-def cpu_play(cpu):
+def cpu_play(cpu, action):
     if cpu.game_over or cpu.paused:
-        return
+        return False
 
-    best_move = find_best_move(cpu)
+    if action == 'left':
+        return cpu.move(-1, 0)
 
-    if best_move is not None:
-        cpu.cells, cpu.x = best_move
+    elif action == 'right':
+        return cpu.move(1, 0)
+
+    elif action == 'rotate_right':
+        return cpu.right_rotate()
+
+    elif action == 'rotate_left':
+        return cpu.left_rotate()
+
+    elif action == 'drop':
         cpu.hard_drop()
+        return True
+
+    return False
 
 def main():
     def render_battle(game, cpu):
