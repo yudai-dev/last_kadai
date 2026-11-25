@@ -270,6 +270,39 @@ def evaluate(board):
 
     return score
 
+def find_best_move(cpu):
+    best_score = float('-inf')
+    best_move = None
+    cells = list(cpu.cells)
+
+    for rotation in range(4):
+
+        for x in range(-3, COLS):
+            y = cpu.y
+
+            if not cpu.can_place(cells, x, y):
+                continue
+
+            while cpu.can_place(cells, x, y + 1):
+                y += 1
+
+            board = [row[:] for row in cpu.board]
+
+            for dx, dy in cells:
+                board[y + dy][x + dx] = cpu.kind
+
+            score = evaluate(board)
+
+            if score > best_score:
+                best_score = score
+                best_move = (list(cells), x)
+
+        if cpu.kind == 'O':
+            break
+
+        cells = [(3 - dy, dx) for dx, dy in cells]
+
+    return best_move
 
 
 def main():
