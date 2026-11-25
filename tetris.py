@@ -146,6 +146,18 @@ class Tetris:
     @property
     def fall_interval(self):
         return max(0.10, 0.65 - (self.lines // 5) * 0.07)
+    
+    def render_piece(self, kind):
+        screen = [[' ' for _ in range(4)] for _ in range(2)]
+
+        if kind is not None:
+            for dx, dy in SHAPES[kind]:
+                screen[dy][dx] = kind
+
+        return [
+            ''.join('[]' if c != ' ' else '  ' for c in row)
+            for row in screen
+        ]
 
     def render(self):
         screen = [row[:] for row in self.board]
@@ -165,9 +177,53 @@ class Tetris:
                 px, py = self.x + dx, self.y + dy
                 if 0 <= py < ROWS and 0 <= px < COLS:
                     screen[py][px] = self.kind
-        out = ['=== ASCII TETRIS ===', f'SCORE {self.score}    LINES {self.lines}',    f'HOLD {self.hold_kind or "-"}    NEXT {self.next_kind}', '+' + '--' * COLS + '+']
-        out += ['|' + ''.join('()' if c == '.' else '[]' if c != ' ' else '  ' for c in row) + '|' for row in screen]
-        out += ['+' + '--' * COLS + '+', 'A/D:移動 W:右回転 E:左回転 C:ホールド Space:即時落下 P:停止 Q:終了 R:再開']
+
+        hold = self.render_piece(self.hold_kind)
+        next_piece = self.render_piece(self.next_kind)
+
+        left_panel = [
+            '   HOLD   ',
+            '+--------+',
+            '|' + hold[0] + '|',
+            '|' + hold[1] + '|',
+            '+--------+'
+        ]
+
+        right_panel = [
+            '   NEXT   ',
+            '+--------+',
+            '|' + next_piece[0] + '|',
+            '|' + next_piece[1] + '|',
+            '+--------+'
+        ]
+
+        board = ['+' + '--' * COLS + '+']
+
+        board += [
+            '|' + ''.join(
+                '()' if c == '.' else
+                '[]' if c != ' ' else '  '
+                for c in row
+            ) + '|'
+            for row in screen
+        ]
+
+        board.append('+' + '--' * COLS + '+')
+
+        out = [
+            '            === ASCII TETRIS ===',
+            f'            SCORE {self.score}  LINES {self.lines}',
+            ''
+        ]
+
+        for i, row in enumerate([' ' * (COLS * 2 + 2)] + board):
+            left = left_panel[i] if i < len(left_panel) else ' ' * 10
+            right = right_panel[i] if i < len(right_panel) else ' ' * 10
+
+            out.append(left + '  ' + row + '  ' + right)
+
+        out.append('A/D:移動 W:右回転 E:左回転 C:ホールド')
+        out.append('Space:即時落下 P:停止 Q:終了 R:再開')
         if self.paused:
             out.append('--- PAUSED ---')
         if self.game_over:
