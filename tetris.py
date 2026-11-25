@@ -39,8 +39,28 @@ class Tetris:
         self.lines = 0
         self.game_over = False
         self.paused = False
+        self.hold_kind = None
+        self.hold_used = False
         self.next_kind = self.rng.choice(list(SHAPES))
         self.spawn()
+
+    def hold(self):
+        if self.game_over or self.paused or self.hold_used:
+            return False
+
+        if self.hold_kind is None:
+            self.hold_kind = self.kind
+            self.spawn()
+
+        else:
+            self.kind, self.hold_kind = self.hold_kind, self.kind
+            self.cells = list(SHAPES[self.kind])
+            self.x, self.y = COLS // 2 - 2, 0
+            if not self.can_place(self.cells, self.x, self.y):
+                self.game_over = True
+        self.hold_used = True
+        return True
+            
 
     def spawn(self):
         self.kind = self.next_kind
@@ -109,6 +129,7 @@ class Tetris:
                 self.game_over = True
                 return
             self.board[py][px] = self.kind
+        self.hold_used = False
         self.clear_lines()
         self.spawn()
 
@@ -132,9 +153,9 @@ class Tetris:
                 px, py = self.x + dx, self.y + dy
                 if 0 <= py < ROWS and 0 <= px < COLS:
                     screen[py][px] = self.kind
-        out = ['=== ASCII TETRIS ===', f'SCORE {self.score}    LINES {self.lines}    NEXT {self.next_kind}', '+' + '--' * COLS + '+']
+        out = ['=== ASCII TETRIS ===', f'SCORE {self.score}    LINES {self.lines}',    f'HOLD {self.hold_kind or "-"}    NEXT {self.next_kind}', '+' + '--' * COLS + '+']
         out += ['|' + ''.join('[]' if c != ' ' else '  ' for c in row) + '|' for row in screen]
-        out += ['+' + '--' * COLS + '+', 'A/D:移動 W:右回転 E:左回転 S:加速 Space:落下 P:停止 R:再開 Q:終了']
+        out += ['+' + '--' * COLS + '+', 'A/D:移動 W:右回転 E:左回転 C:ホールド Space:即時落下 P:停止 Q:終了 R:再開']
         if self.paused:
             out.append('--- PAUSED ---')
         if self.game_over:
@@ -168,6 +189,8 @@ def main():
                     game.move(0, 1)
                 elif key == 'e':
                     game.left_rotate()
+                elif key == 'c':
+                    game.hold()
                 elif key == ' ':
                     game.hard_drop()
             now = time.monotonic()
