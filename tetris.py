@@ -375,6 +375,7 @@ def main():
     with Terminal() as terminal:
         last_fall = time.monotonic()
         last_cpu = time.monotonic()
+        cpu_actions = []
         while True:
             paint(render_battle(game, cpu))
             key = terminal.read_key()
@@ -385,6 +386,7 @@ def main():
                 cpu.reset()
                 last_fall = time.monotonic()
                 last_cpu = time.monotonic()
+                cpu_actions = []
             elif key == 'p':
                 game.paused = not game.paused
                 last_fall = time.monotonic()
@@ -411,10 +413,19 @@ def main():
                     game.move(0, 1)
                     last_fall = now
 
-            # CPUの自動落下
+            # AIによる自動操作
             if not game.paused and not game.game_over and not cpu.game_over:
-                if now - last_cpu >= 1.5:
-                    cpu_play(cpu)
+                if now - last_cpu >= 0.5:
+
+                    if not cpu_actions:
+                        cpu_actions = find_best_move(cpu)
+
+                    if cpu_actions:
+                        action = cpu_actions.pop(0)
+
+                        if not cpu_play(cpu, action):
+                            cpu_actions = []
+
                     last_cpu = now
 
             time.sleep(0.035)
