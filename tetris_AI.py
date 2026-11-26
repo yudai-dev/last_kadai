@@ -249,7 +249,7 @@ class Tetris:
 
             out.append(left + '  ' + row + '  ' + right)
 
-        out.append('A/D:移動 W:右回転 E:左回転 C:ホールド')
+        out.append('A/D:移動 E:右回転 W:左回転 C:ホールド')
         out.append('Space:即時落下 P:停止 Q:終了 R:再開')
         if self.paused:
             out.append('--- PAUSED ---')
@@ -418,7 +418,7 @@ def main():
             # 画面を毎ループ再描画し、ノンブロッキング入力を読み取る。
             paint(render_battle(game, cpu))
             key = terminal.read_key()
-            if key == 'q':
+            if key == 'z':
                 break
             if key == 'r':
                 # 再開時はプレイヤーとCPUの両方を初期状態へ戻す。
@@ -438,13 +438,13 @@ def main():
                     game.move(-1, 0)
                 elif key in ('d', 'right'):
                     game.move(1, 0)
-                elif key in ('w', 'up'):
+                elif key in ("e"):
                     game.right_rotate()
-                elif key in ('s', 'down'):
+                elif key in ('s'):
                     game.move(0, 1)
-                elif key == 'e':
+                elif key == 'w':
                     game.left_rotate()
-                elif key == 'c':
+                elif key == 'f':
                     game.hold()
                 elif key == ' ':
                     game.hard_drop()
