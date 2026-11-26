@@ -1,5 +1,10 @@
 # ASCII TETRIS
 
+今回自分で作ったのは[tetris.py]ファイルです。
+
+[tetris_AI.py]ファイルはAIを利用して作った理解していないものなので、
+評価には入れないでください。
+
 ## 1. ゲームタイトル
 
 ASCII TETRIS（ASCIIテトリス）
