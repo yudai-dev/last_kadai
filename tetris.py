@@ -13,7 +13,6 @@ Space 一気に落下、P 一時停止、R 最初から、Q 終了。
 from __future__ import annotations
 import random
 import time
-from collections import deque
 from itertools import zip_longest
 from terminal_io import Terminal, paint
 
@@ -232,130 +231,6 @@ class Tetris:
         return out
 
 
-def evaluate(board):
-    heights = []
-    holes = 0
-
-    for x in range(COLS):
-        height = 0
-        found_block = False
-
-        for y in range(ROWS):
-            if board[y][x] != ' ':
-                if not found_block:
-                    height = ROWS - y
-                    found_block = True
-
-            elif found_block:
-                holes += 1
-
-        heights.append(height)
-
-    total_height = sum(heights)
-
-    bumpiness = sum(
-        abs(heights[x] - heights[x + 1])
-        for x in range(COLS - 1)
-    )
-
-    cleared_lines = sum(
-        1 for row in board if ' ' not in row
-    )
-
-    score = (
-        cleared_lines * 100
-        - holes * 40
-        - total_height * 5
-        - bumpiness * 10
-    )
-
-    return score
-
-def find_best_move(cpu):
-    best_score = float('-inf')
-    best_actions = []
-
-    queue = deque([
-        (tuple(cpu.cells), cpu.x, cpu.y, [])
-    ])
-
-    visited = set()
-
-    while queue:
-        cells, x, y, actions = queue.popleft()
-
-        state = (tuple(sorted(cells)), x, y)
-
-        if state in visited:
-            continue
-
-        visited.add(state)
-
-        # 落下先を調べる
-        drop_y = y
-
-        while cpu.can_place(cells, x, drop_y + 1):
-            drop_y += 1
-
-        # 仮の盤面を作る
-        board = [row[:] for row in cpu.board]
-
-        for dx, dy in cells:
-            board[drop_y + dy][x + dx] = cpu.kind
-
-        # 盤面を評価する
-        score = evaluate(board)
-
-        if score > best_score:
-            best_score = score
-            best_actions = actions + ['drop']
-
-        # 左右の移動を探索
-        for dx, action in [(-1, 'left'), (1, 'right')]:
-            if cpu.can_place(cells, x + dx, y):
-                queue.append(
-                    (cells, x + dx, y, actions + [action])
-                )
-
-        # 左右の回転を探索
-        if cpu.kind != 'O':
-            rotations = [
-                (tuple((3 - dy, dx) for dx, dy in cells), 'rotate_right'),
-                (tuple((dy, 3 - dx) for dx, dy in cells), 'rotate_left')
-            ]
-
-            for rotated, action in rotations:
-                for shift in (0, -1, 1, -2, 2):
-                    if cpu.can_place(rotated, x + shift, y):
-                        queue.append(
-                            (rotated, x + shift, y, actions + [action])
-                        )
-                        break
-
-    return best_actions
-
-def cpu_play(cpu, action):
-    if cpu.game_over or cpu.paused:
-        return False
-
-    if action == 'left':
-        return cpu.move(-1, 0)
-
-    elif action == 'right':
-        return cpu.move(1, 0)
-
-    elif action == 'rotate_right':
-        return cpu.right_rotate()
-
-    elif action == 'rotate_left':
-        return cpu.left_rotate()
-
-    elif action == 'drop':
-        cpu.hard_drop()
-        return True
-
-    return False
-
 def main():
     def render_battle(game, cpu):
         player_screen = game.render()
@@ -375,7 +250,6 @@ def main():
     with Terminal() as terminal:
         last_fall = time.monotonic()
         last_cpu = time.monotonic()
-        cpu_actions = []
         while True:
             paint(render_battle(game, cpu))
             key = terminal.read_key()
@@ -386,7 +260,6 @@ def main():
                 cpu.reset()
                 last_fall = time.monotonic()
                 last_cpu = time.monotonic()
-                cpu_actions = []
             elif key == 'p':
                 game.paused = not game.paused
                 last_fall = time.monotonic()
@@ -413,19 +286,10 @@ def main():
                     game.move(0, 1)
                     last_fall = now
 
-            # AIによる自動操作
+            # CPUの自動落下
             if not game.paused and not game.game_over and not cpu.game_over:
-                if now - last_cpu >= 0.5:
-
-                    if not cpu_actions:
-                        cpu_actions = find_best_move(cpu)
-
-                    if cpu_actions:
-                        action = cpu_actions.pop(0)
-
-                        if not cpu_play(cpu, action):
-                            cpu_actions = []
-
+                if now - last_cpu >= cpu.fall_interval:
+                    cpu.move(0, 1)
                     last_cpu = now
 
             time.sleep(0.035)

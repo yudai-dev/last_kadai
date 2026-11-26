@@ -1,0 +1,478 @@
+"""ASCIIテトリス（標準ライブラリ）。
+
+遊び方: A/D または ←/→ 移動、W または ↑ 回転、S または ↓ 加速、
+Space 一気に落下、P 一時停止、R 最初から、Q 終了。
+
+【改造の入口 ★★～★★★★】
+1. SHAPESでブロックの形を変える、COLS/ROWSで盤面変更。
+2. `clear_lines()`の得点、`fall_interval`の落下速度を調整。
+3. 次のブロック表示・ホールド機能・特殊ブロックを追加。
+
+既存エンジンには回転、接触、固定、横一列の消去、ゲームオーバーを実装済み。
+"""
+from __future__ import annotations
+import random
+import time
+from collections import deque
+from itertools import zip_longest
+from terminal_io import Terminal, paint
+
+# ---- 盤面とブロックの基本設定 ----
+# COLSとROWSを変更すると、盤面の横幅と高さを変更できる。
+COLS, ROWS = 10, 18
+WIN_SCORES = 5000
+# SHAPESはブロックの形を表す辞書。
+# 各ブロックは4x4マスの範囲内で左上を基準にした相対座標で定義する。
+# T / J / L / S / Z / I / O の7種類が、テトリスの基本ブロック。
+SHAPES = {
+    'I': [(0, 1), (1, 1), (2, 1), (3, 1)],
+    'O': [(1, 0), (2, 0), (1, 1), (2, 1)],
+    'T': [(1, 0), (0, 1), (1, 1), (2, 1)],
+    'S': [(1, 0), (2, 0), (0, 1), (1, 1)],
+    'Z': [(0, 0), (1, 0), (1, 1), (2, 1)],
+    'J': [(0, 0), (0, 1), (1, 1), (2, 1)],
+    'L': [(2, 0), (0, 1), (1, 1), (2, 1)],
+}
+
+
+class Tetris:
+    """テトリス1台分の盤面、ブロック、スコア、状態を管理するクラス。"""
+
+    def __init__(self, rng=None):
+        """乱数生成器を受け取り、ゲームを初期状態にする。"""
+        self.rng = rng or random.Random()
+        self.reset()
+
+    def reset(self):
+        """盤面・スコア・ブロック・状態を初期値に戻し、再開時に使う。"""
+        self.board = [[' ' for _ in range(COLS)] for _ in range(ROWS)]
+        self.score = 0
+        self.lines = 0
+        self.game_over = False
+        self.paused = False
+        self.hold_kind = None
+        self.hold_used = False
+        self.next_kind = self.rng.choice(list(SHAPES))
+        self.spawn()
+
+    def hold(self):
+        """ブロックをホールドから出し入れする（1回の落下中は1回だけ使用可）。"""
+        if self.game_over or self.paused or self.hold_used:
+            return False
+
+        if self.hold_kind is None:
+            self.hold_kind = self.kind
+            self.spawn()
+
+        else:
+            self.kind, self.hold_kind = self.hold_kind, self.kind
+            self.cells = list(SHAPES[self.kind])
+            self.x, self.y = COLS // 2 - 2, 0
+            if not self.can_place(self.cells, self.x, self.y):
+                self.game_over = True
+        self.hold_used = True
+        return True
+            
+
+    def spawn(self):
+        """次のブロックを画面中央付近に出現させる。"""
+        self.kind = self.next_kind
+        self.next_kind = self.rng.choice(list(SHAPES))
+        self.cells = list(SHAPES[self.kind])
+        self.x, self.y = COLS // 2 - 2, 0
+        if not self.can_place(self.cells, self.x, self.y):
+            self.game_over = True
+
+    def can_place(self, cells, x, y):
+        """ブロックが盤面外・既存ブロックと重ならずに置けるか判定する。"""
+        for dx, dy in cells:
+            px, py = x + dx, y + dy
+            if px < 0 or px >= COLS or py >= ROWS:
+                return False
+            if py >= 0 and self.board[py][px] != ' ':
+                return False
+        return True
+
+    def move(self, dx, dy):
+        """ブロックを左右または下へ移動し、下に移動できない場合は固定する。"""
+        if self.game_over or self.paused:
+            return False
+        if self.can_place(self.cells, self.x + dx, self.y + dy):
+            self.x += dx
+            self.y += dy
+            return True
+        if dy > 0:
+            self.lock()
+        return False
+
+    def right_rotate(self):
+        """ブロックを時計回りに回転し、壁や床との衝突時は横へ補正する。"""
+        if self.game_over or self.paused or self.kind == 'O':
+            return False
+        # 座標を90度時計回りに変換し、置ける位置を順番に試す。
+        # 壁際では1～2マス横へ補正する簡易ウォールキック。
+        rotated = [(3 - dy, dx) for dx, dy in self.cells]
+        for shift in (0, -1, 1, -2, 2):
+            if self.can_place(rotated, self.x + shift, self.y):
+                self.cells = rotated
+                self.x += shift
+                return True
+        return False
+
+    def left_rotate(self):
+        """ブロックを反時計回りに回転し、壁や床との衝突時は横へ補正する。"""
+        if self.game_over or self.paused or self.kind == 'O':
+            return False
+        # 座標を90度反時計回りに変換し、置ける位置を順番に試す。
+        # 壁際では1～2マス横へ補正する簡易ウォールキック。
+        rotated = [(dy,3 - dx) for dx, dy in self.cells]
+        for shift in (0, -1, 1, -2, 2):
+            if self.can_place(rotated, self.x + shift, self.y):
+                self.cells = rotated
+                self.x += shift
+                return True
+        return False
+
+    def hard_drop(self):
+        """ブロックを着地可能な最下点まで落下させ、その後固定する。"""
+        if self.game_over or self.paused:
+            return
+        while self.can_place(self.cells, self.x, self.y + 1):
+            self.y += 1
+            self.score += 1
+        self.lock()
+
+    def lock(self):
+        """ブロックの現在位置を盤面へ文字として固定し、次のブロックを出す。"""
+        for dx, dy in self.cells:
+            px, py = self.x + dx, self.y + dy
+            if py < 0:
+                self.game_over = True
+                return
+            self.board[py][px] = self.kind
+        self.hold_used = False
+        self.clear_lines()
+        self.spawn()
+
+    def clear_lines(self):
+        """盤面の完成行を消去し、消去数に応じてスコアと累計行数を加算する。"""
+        remaining = [row for row in self.board if ' ' in row]
+        removed = ROWS - len(remaining)
+        if removed:
+            self.board = [[' '] * COLS for _ in range(removed)] + remaining
+            self.lines += removed
+            self.score += (0, 100, 300, 500, 800)[removed] * (1 + self.lines // 10)
+        return removed
+
+    @property
+    def fall_interval(self):
+        """累計消去行数に応じて短くなる自動落下の待ち時間を返す。"""
+        return max(0.10, 0.65 - (self.lines // 5) * 0.07)
+    
+    def render_piece(self, kind):
+        """ホールド・ネクスト表示用に、指定ブロックを2行の小さい絵へ変換する。"""
+        screen = [[' ' for _ in range(4)] for _ in range(2)]
+
+        if kind is not None:
+            for dx, dy in SHAPES[kind]:
+                screen[dy][dx] = kind
+
+        return [
+            ''.join('[]' if c != ' ' else '  ' for c in row)
+            for row in screen
+        ]
+
+    def render(self):
+        """盤面・現在ブロック・落下予測・ホールド・ネクストを画面文字列へ作成する。"""
+        screen = [row[:] for row in self.board]
+        if not self.game_over:
+            # ghost_yはブロックが最後に着地する行。
+            # ゴーストブロックは落下位置を事前に示すため'・'で表示する。
+            ghost_y = self.y
+
+            while self.can_place(self.cells, self.x, ghost_y + 1):
+                ghost_y += 1
+
+            for dx, dy in self.cells:
+                px, py = self.x + dx, ghost_y + dy
+
+                if 0 <= py < ROWS and 0 <= px < COLS:
+                      screen[py][px] = '.' 
+
+            for dx, dy in self.cells:
+                px, py = self.x + dx, self.y + dy
+                if 0 <= py < ROWS and 0 <= px < COLS:
+                    screen[py][px] = self.kind
+
+        hold = self.render_piece(self.hold_kind)
+        next_piece = self.render_piece(self.next_kind)
+
+        # 左右のパネルはホールドと次のブロックを表示する。
+        left_panel = [
+            '   HOLD   ',
+            '+--------+',
+            '|' + hold[0] + '|',
+            '|' + hold[1] + '|',
+            '+--------+'
+        ]
+
+        right_panel = [
+            '   NEXT   ',
+            '+--------+',
+            '|' + next_piece[0] + '|',
+            '|' + next_piece[1] + '|',
+            '+--------+'
+        ]
+
+        board = ['+' + '--' * COLS + '+']
+
+        board += [
+            '|' + ''.join(
+                '()' if c == '.' else
+                '[]' if c != ' ' else '  '
+                for c in row
+            ) + '|'
+            for row in screen
+        ]
+
+        board.append('+' + '--' * COLS + '+')
+
+        out = [
+            '            === ASCII TETRIS ===',
+            f'            SCORE {self.score}  LINES {self.lines}',
+            ''
+        ]
+
+        for i, row in enumerate([' ' * (COLS * 2 + 2)] + board):
+            left = left_panel[i] if i < len(left_panel) else ' ' * 10
+            right = right_panel[i] if i < len(right_panel) else ' ' * 10
+
+            out.append(left + '  ' + row + '  ' + right)
+
+        out.append('A/D:移動 W:右回転 E:左回転 C:ホールド')
+        out.append('Space:即時落下 P:停止 Q:終了 R:再開')
+        if self.paused:
+            out.append('--- PAUSED ---')
+        if self.game_over:
+            out.append('--- GAME OVER ---  Rで再挑戦 / Qで終了')
+        return out
+
+
+def evaluate(board):
+    """CPUが置いた後の盤面を点数化する。
+
+    完成した行は高得点、穴・合計高さ・段差はペナルティとして評価する。
+    """
+    heights = []
+    holes = 0
+
+    for x in range(COLS):
+        height = 0
+        found_block = False
+
+        for y in range(ROWS):
+            if board[y][x] != ' ':
+                if not found_block:
+                    height = ROWS - y
+                    found_block = True
+
+            elif found_block:
+                holes += 1
+
+        heights.append(height)
+
+    total_height = sum(heights)
+
+    bumpiness = sum(
+        abs(heights[x] - heights[x + 1])
+        for x in range(COLS - 1)
+    )
+
+    cleared_lines = sum(
+        1 for row in board if ' ' not in row
+    )
+
+    score = (
+        cleared_lines * 100
+        - holes * 40
+        - total_height * 5
+        - bumpiness * 10
+    )
+
+    return score
+
+def find_best_move(cpu):
+    """CPU用に、移動・回転・落下の操作列から最良の手を探索する。"""
+    best_score = float('-inf')
+    best_actions = []
+
+    # キューには「ブロック形・座標・これまでの操作」を保存し、幅優先探索する。
+    queue = deque([
+        (tuple(cpu.cells), cpu.x, cpu.y, [])
+    ])
+
+    # 同じ形と座標を再び探索しないように訪問済みを記録する。
+    visited = set()
+
+    while queue:
+        cells, x, y, actions = queue.popleft()
+
+        state = (tuple(sorted(cells)), x, y)
+
+        if state in visited:
+            continue
+
+        visited.add(state)
+
+        # 落下先を調べる
+        drop_y = y
+
+        while cpu.can_place(cells, x, drop_y + 1):
+            drop_y += 1
+
+        # 仮の盤面を作る
+        board = [row[:] for row in cpu.board]
+
+        for dx, dy in cells:
+            board[drop_y + dy][x + dx] = cpu.kind
+
+        # 盤面を評価する
+        score = evaluate(board)
+
+        if score > best_score:
+            best_score = score
+            best_actions = actions + ['drop']
+
+        # 左右の移動を探索
+        for dx, action in [(-1, 'left'), (1, 'right')]:
+            if cpu.can_place(cells, x + dx, y):
+                queue.append(
+                    (cells, x + dx, y, actions + [action])
+                )
+
+        # 左右の回転を探索
+        if cpu.kind != 'O':
+            rotations = [
+                (tuple((3 - dy, dx) for dx, dy in cells), 'rotate_right'),
+                (tuple((dy, 3 - dx) for dx, dy in cells), 'rotate_left')
+            ]
+
+            for rotated, action in rotations:
+                for shift in (0, -1, 1, -2, 2):
+                    if cpu.can_place(rotated, x + shift, y):
+                        queue.append(
+                            (rotated, x + shift, y, actions + [action])
+                        )
+                        break
+
+    return best_actions
+
+def cpu_play(cpu, action):
+    """CPUが探索した操作名を、実際のTetrisメソッドへ対応付けて実行する。"""
+    if cpu.game_over or cpu.paused:
+        return False
+
+    if action == 'left':
+        return cpu.move(-1, 0)
+
+    elif action == 'right':
+        return cpu.move(1, 0)
+
+    elif action == 'rotate_right':
+        return cpu.right_rotate()
+
+    elif action == 'rotate_left':
+        return cpu.left_rotate()
+
+    elif action == 'drop':
+        cpu.hard_drop()
+        return True
+
+    return False
+
+def main():
+    """ゲーム全体の入力、画面更新、時間経過、自動落下、CPU操作を制御する。"""
+    def render_battle(game, cpu):
+        """プレイヤーとCPUの画面を左右に並べて1枚の表示内容にする。"""
+        player_screen = game.render()
+        cpu_screen = cpu.render()
+
+        out = []
+
+        for left, right in zip_longest(
+            player_screen, cpu_screen, fillvalue=""
+        ):
+            out.append(left.ljust(55) + right)
+
+        return out
+
+    # 右側のCPUに対してプレイヤーが操作する。
+    game = Tetris()
+    cpu = Tetris()
+    with Terminal() as terminal:
+        # 各ブロックの自動落下時刻とCPUの次の操作時刻を記録する。
+        last_fall = time.monotonic()
+        last_cpu = time.monotonic()
+        cpu_actions = []
+        while True:
+            # 画面を毎ループ再描画し、ノンブロッキング入力を読み取る。
+            paint(render_battle(game, cpu))
+            key = terminal.read_key()
+            if key == 'q':
+                break
+            if key == 'r':
+                # 再開時はプレイヤーとCPUの両方を初期状態へ戻す。
+                game.reset()
+                cpu.reset()
+                last_fall = time.monotonic()
+                last_cpu = time.monotonic()
+                cpu_actions = []
+            elif key == 'p':
+                # 停止中は時間経過とブロック操作を止める。
+                game.paused = not game.paused
+                last_fall = time.monotonic()
+                last_cpu = time.monotonic()
+            elif not game.paused and not game.game_over:
+                # キーボードまたは矢印キーをゲーム操作へ変換する。
+                if key in ('a', 'left'):
+                    game.move(-1, 0)
+                elif key in ('d', 'right'):
+                    game.move(1, 0)
+                elif key in ('w', 'up'):
+                    game.right_rotate()
+                elif key in ('s', 'down'):
+                    game.move(0, 1)
+                elif key == 'e':
+                    game.left_rotate()
+                elif key == 'c':
+                    game.hold()
+                elif key == ' ':
+                    game.hard_drop()
+            now = time.monotonic()
+            # プレイヤーの自動落下
+            if not game.paused and not game.game_over:
+                if now - last_fall >= game.fall_interval:
+                    game.move(0, 1)
+                    last_fall = now
+
+            # AIによる自動操作
+            if not game.paused and not game.game_over and not cpu.game_over:
+                if now - last_cpu >= 0.5:
+
+                    if not cpu_actions:
+                        cpu_actions = find_best_move(cpu)
+
+                    if cpu_actions:
+                        action = cpu_actions.pop(0)
+
+                        if not cpu_play(cpu, action):
+                            cpu_actions = []
+
+                    last_cpu = now
+
+            time.sleep(0.035)
+    print('テトリスを終了しました。')
+
+
+if __name__ == '__main__':
+    main()
